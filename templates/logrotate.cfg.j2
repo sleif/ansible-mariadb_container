@@ -1,0 +1,10 @@
+{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups/{{ MYSQL_CONTAINER_NAME }}.sql.bz2 {
+ daily
+ rotate 20
+ copy
+ dateext
+ dateyesterday
+ missingok
+ notifempty
+ create 660 root root
+}

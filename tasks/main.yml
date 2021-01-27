@@ -1,0 +1,101 @@
+---
+- name: "create {{ MYSQL_CONTAINER_NAME }} backup directory"
+  file:
+    path: "{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}/conf.d"
+    state: directory
+    mode: '0755'
+
+- name: create custom configuration
+  ini_file:
+    path: "{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}/conf.d/custom.cnf"
+    section: mysqld
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+    mode: '0644'
+  loop:
+    - { option: 'max_connections', value: '{{ mariadb_container_max_connections }}' }
+
+- name: Start MariaDB container for {{ MYSQL_DATABASE }}
+  docker_container:
+    name: "{{ MYSQL_CONTAINER_NAME }}"
+    image: mariadb:latest
+    state: started
+    restart_policy: always
+    recreate: yes
+    networks:
+      - name: "{{ DOCKER_NETWORK_NAME }}"
+        aliases:
+          # - mariadb-container
+          - "{{ MYSQL_CONTAINER_NAME }}"
+    networks_cli_compatible: yes
+    pull: yes
+    stop_timeout: 90
+    published_ports: '{{ mariadb_container_exposed_port }}:3306'
+    volumes:
+      - "{{ container_storage_dir_base }}/{{ MYSQL_CONTAINER_NAME }}/var_lib_mysql:/var/lib/mysql:Z"
+      - "{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}/conf.d:/etc/mysql/conf.d:Z"
+    env:
+      MYSQL_USER: "{{ MYSQL_USER }}"
+      MYSQL_PASSWORD: "{{ MYSQL_PASSWORD }}"
+      MYSQL_DATABASE: "{{ MYSQL_DATABASE }}"
+      MYSQL_ROOT_PASSWORD: "{{ MYSQL_ROOT_PASSWORD }}"
+
+- name: "create {{ MYSQL_CONTAINER_NAME }} backup directory"
+  file:
+    path: "{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups"
+    state: directory
+    mode: '0700'
+  tags:
+    - mariadb_backup
+
+- name: "ensure bzip2 is installed"
+  package:
+    name: bzip2
+    state: present
+  tags:
+    - mariadb_backup
+
+- name: Add cronjob for daily dump of mariadb {{ MYSQL_DATABASE }}
+  cron:
+    name: "Daily dump of mariadb {{ MYSQL_DATABASE }}"
+    minute: "11"
+    hour: "*/4"
+    job: "docker exec {{ MYSQL_CONTAINER_NAME }} sh -c 'exec mysqldump --lock-tables --all-databases -uroot -p{{ MYSQL_ROOT_PASSWORD }}' >
+      {{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups/{{ MYSQL_CONTAINER_NAME }}.sql;
+      bzip2 -f {{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups/{{ MYSQL_CONTAINER_NAME }}.sql"
+  tags:
+    - mariadb_backup
+
+- name: configure logrotate for the database dump
+  template:
+    src: logrotate.cfg.j2
+    dest: "/etc/logrotate.d/{{ MYSQL_CONTAINER_NAME }}.cfg"
+    mode: '0644'
+  tags:
+    - mariadb_backup
+
+- name: Set selinux policy for backup rotation
+  sefcontext:
+   target: '{{ item.target }}'
+   setype: "{{ item.setype }}"
+   reload: True
+   state: "{{ item.state }}"
+  register: filecontext
+  with_items:
+  - { target: '{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups(/.*)?', setype: 'var_log_t', state: 'present' }
+  when: ansible_selinux and ansible_selinux.status == "enabled"
+  tags:
+    - mariadb_selinux
+
+# - debug:
+#     msg: "{{ filecontext.results[0] }}"
+
+- name: Run restore context to reload selinux
+  command: restorecon -F -R -v {{ item.target }}
+  with_items:
+  - { index: 0, target: '{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups' }
+  when:
+    - filecontext.results[item.index] is changed
+    - ansible_selinux and ansible_selinux.status == "enabled"
+  tags:
+    - mariadb_selinux
