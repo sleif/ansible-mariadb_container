@@ -10,6 +10,5 @@ MYSQL_ROOT_PASSWORD: "mysql_root_password"
 MYSQL_USER: "mysql_db_user"
 MYSQL_PASSWORD: "mysql_db_user_password"
 MYSQL_DATABASE: "mariadb_custom_database"
-mariadb_container_exposed_port: '3306'
 
 DOCKER_NETWORK_NAME: "bridge"
