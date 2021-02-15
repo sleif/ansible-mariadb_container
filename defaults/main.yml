@@ -11,4 +11,4 @@ MYSQL_USER: "mysql_db_user"
 MYSQL_PASSWORD: "mysql_db_user_password"
 MYSQL_DATABASE: "mariadb_custom_database"
 
-DOCKER_NETWORK_NAME: "bridge"
+DOCKER_NETWORK_NAME: "custom-bridge"
