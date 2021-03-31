@@ -1,12 +1,12 @@
 ---
 - name: "create {{ MYSQL_CONTAINER_NAME }} backup directory"
-  file:
+  ansible.builtin.file:
     path: "{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}/conf.d"
     state: directory
     mode: '0755'
 
 - name: create custom configuration
-  ini_file:
+  community.general.ini_file:
     path: "{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}/conf.d/custom.cnf"
     section: mysqld
     option: "{{ item.option }}"
@@ -16,7 +16,7 @@
     - { option: 'max_connections', value: '{{ mariadb_container_max_connections }}' }
 
 - name: Start MariaDB container for {{ MYSQL_DATABASE }}
-  docker_container:
+  community.general.docker_container:
     name: "{{ MYSQL_CONTAINER_NAME }}"
     image: mariadb:latest
     state: started
@@ -41,7 +41,7 @@
       MYSQL_ROOT_PASSWORD: "{{ MYSQL_ROOT_PASSWORD }}"
 
 - name: "create {{ MYSQL_CONTAINER_NAME }} backup directory"
-  file:
+  ansible.builtin.file:
     path: "{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups"
     state: directory
     mode: '0700'
@@ -49,14 +49,14 @@
     - mariadb_backup
 
 - name: "ensure bzip2 is installed"
-  package:
+  ansible.builtin.package:
     name: bzip2
     state: present
   tags:
     - mariadb_backup
 
 - name: Add cronjob for daily dump of mariadb {{ MYSQL_DATABASE }}
-  cron:
+  ansible.builtin.cron:
     name: "Daily dump of mariadb {{ MYSQL_DATABASE }}"
     minute: "11"
     hour: "*/4"
@@ -67,7 +67,7 @@
     - mariadb_backup
 
 - name: configure logrotate for the database dump
-  template:
+  ansible.builtin.template:
     src: logrotate.cfg.j2
     dest: "/etc/logrotate.d/{{ MYSQL_CONTAINER_NAME }}.cfg"
     mode: '0644'
@@ -75,7 +75,7 @@
     - mariadb_backup
 
 - name: Set selinux policy for backup rotation
-  sefcontext:
+  community.general.sefcontext:
    target: '{{ item.target }}'
    setype: "{{ item.setype }}"
    reload: True
@@ -87,11 +87,11 @@
   tags:
     - mariadb_selinux
 
-# - debug:
+# - ansible.builtin.debug:
 #     msg: "{{ filecontext.results[0] }}"
 
 - name: Run restore context to reload selinux
-  command: restorecon -F -R -v {{ item.target }}
+  ansible.builtin.command: restorecon -F -R -v {{ item.target }}
   with_items:
   - { index: 0, target: '{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups' }
   when:
