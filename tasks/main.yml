@@ -13,7 +13,7 @@
     value: "{{ item.value }}"
     mode: '0644'
   loop:
-    - { option: 'max_connections', value: '{{ mariadb_container_max_connections }}' }
+    - {option: 'max_connections', value: '{{ mariadb_container_max_connections }}'}
 
 - name: Start MariaDB container for {{ MYSQL_DATABASE }}
   community.general.docker_container:
@@ -21,14 +21,14 @@
     image: mariadb:latest
     state: started
     restart_policy: always
-    recreate: yes
+    recreate: true
     networks:
       - name: "{{ DOCKER_NETWORK_NAME }}"
         aliases:
           # - mariadb-container
           - "{{ MYSQL_CONTAINER_NAME }}"
-    networks_cli_compatible: yes
-    pull: yes
+    networks_cli_compatible: true
+    pull: true
     stop_timeout: 90
     published_ports: '{{ mariadb_container_exposed_port }}:3306'
     volumes:
@@ -60,7 +60,7 @@
     name: "Daily dump of mariadb {{ MYSQL_DATABASE }}"
     minute: "11"
     hour: "*/4"
-    job: "docker exec {{ MYSQL_CONTAINER_NAME }} sh -c 'exec mysqldump --lock-tables --all-databases -uroot -p{{ MYSQL_ROOT_PASSWORD }}' >
+    job: "docker exec {{ MYSQL_CONTAINER_NAME }} sh -c 'exec mysqldump --lock-tables --all-databases --user=root --password={{ MYSQL_ROOT_PASSWORD }}' >
       {{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups/{{ MYSQL_CONTAINER_NAME }}.sql;
       bzip2 -f {{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups/{{ MYSQL_CONTAINER_NAME }}.sql"
   tags:
@@ -74,16 +74,27 @@
   tags:
     - mariadb_backup
 
+- name: selinux enable logrotate on NFS
+  ansible.posix.seboolean:
+    name: logrotate_use_nfs
+    state: true
+    persistent: true
+  when:
+    - ansible_selinux and ansible_selinux.status == "enabled"
+  tags:
+    - mariadb_selinux
+
 - name: Set selinux policy for backup rotation
   community.general.sefcontext:
-   target: '{{ item.target }}'
-   setype: "{{ item.setype }}"
-   reload: True
-   state: "{{ item.state }}"
+    target: '{{ item.target }}'
+    setype: "{{ item.setype }}"
+    reload: true
+    state: "{{ item.state }}"
   register: filecontext
   with_items:
-  - { target: '{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups(/.*)?', setype: 'var_log_t', state: 'present' }
-  when: ansible_selinux and ansible_selinux.status == "enabled"
+    - {target: '{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups(/.*)?', setype: 'var_log_t', state: 'present'}
+  when:
+    - ansible_selinux and ansible_selinux.status == "enabled"
   tags:
     - mariadb_selinux
 
@@ -91,9 +102,10 @@
 #     msg: "{{ filecontext.results[0] }}"
 
 - name: Run restore context to reload selinux
-  ansible.builtin.command: restorecon -F -R -v {{ item.target }}
+  ansible.builtin.command: |
+    restorecon -F -R -v {{ item.target }}
   with_items:
-  - { index: 0, target: '{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups' }
+    - {index: 0, target: '{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups'}
   when:
     - filecontext.results[item.index] is changed
     - ansible_selinux and ansible_selinux.status == "enabled"
