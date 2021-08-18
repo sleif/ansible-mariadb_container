@@ -14,6 +14,7 @@
     mode: '0644'
   loop:
     - {option: 'max_connections', value: '{{ mariadb_container_max_connections }}'}
+    - {option: 'innodb_read_only_compressed', value: 'off'}
 
 - name: Start MariaDB container for {{ MYSQL_DATABASE }}
   community.general.docker_container:
