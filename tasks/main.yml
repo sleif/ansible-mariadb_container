@@ -19,7 +19,7 @@
 - name: Start MariaDB container for {{ MYSQL_DATABASE }}
   community.general.docker_container:
     name: "{{ MYSQL_CONTAINER_NAME }}"
-    image: mariadb:latest
+    image: "mariadb:{{ mariadb_container_image_tag }}"
     state: started
     restart_policy: always
     recreate: true

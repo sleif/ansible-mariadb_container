@@ -2,6 +2,7 @@
 
 container_storage_dir_base: '/srv'
 container_storage_dir_base_backup: '/srv'
+mariadb_container_image_tag: 'latest'
 mariadb_container_max_connections: '512'
 mariadb_container_exposed_port: '3306'
 
