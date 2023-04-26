@@ -6,10 +6,8 @@ mariadb_container_image_tag: 'latest'
 mariadb_container_max_connections: '512'
 mariadb_container_exposed_port: '3306'
 
-MYSQL_CONTAINER_NAME: "mariadb"
-MYSQL_ROOT_PASSWORD: "mysql_root_password"
-MYSQL_USER: "mysql_db_user"
-MYSQL_PASSWORD: "mysql_db_user_password"
-MYSQL_DATABASE: "mariadb_custom_database"
-
-DOCKER_NETWORK_NAME: "custom-bridge"
+mariadb_container_name: "mariadb"
+mariadb_root_password: "mariadb_root_password"
+mariadb_user: "mariadb_db_user"
+mariadb_password: "mariadb_db_user_password"
+mariadb_database: "mariadb_custom_database"

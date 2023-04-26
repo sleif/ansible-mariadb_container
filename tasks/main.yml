@@ -1,13 +1,17 @@
 ---
-- name: "create {{ MYSQL_CONTAINER_NAME }} backup directory"
+
+- name: "create {{ mariadb_container_name }} backup directory"
   ansible.builtin.file:
-    path: "{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}/conf.d"
+    path: "{{ item }}"
     state: directory
     mode: '0755'
+  loop:
+    - "{{ container_storage_dir_base }}/{{ mariadb_container_name }}/var_lib_mysql"
+    - "{{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}/conf.d"
 
 - name: create custom configuration
   community.general.ini_file:
-    path: "{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}/conf.d/custom.cnf"
+    path: "{{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}/conf.d/custom.cnf"
     section: mysqld
     option: "{{ item.option }}"
     value: "{{ item.value }}"
@@ -16,34 +20,58 @@
     - {option: 'max_connections', value: '{{ mariadb_container_max_connections }}'}
     - {option: 'innodb_read_only_compressed', value: 'off'}
 
-- name: Start MariaDB container for {{ MYSQL_DATABASE }}
-  community.general.docker_container:
-    name: "{{ MYSQL_CONTAINER_NAME }}"
-    image: "mariadb:{{ mariadb_container_image_tag }}"
+- name: Gather info about the pod
+  containers.podman.podman_pod_info:
+    name: "{{ pod_name }}"
+  register: _pod_info
+  when:
+    - pod_name is defined
+    - pod_name | length > 0
+
+- name: create the pod
+  containers.podman.podman_pod:
+    name: "{{ pod_name }}"
+    publish: "{{ pod_published_ports | default(omit) }}"
+  register: _pod_info
+  when:
+    - pod_name is defined
+    - pod_name | length > 0
+    - _pod_info.pods | length == 0
+
+- name: Start MariaDB container for {{ mariadb_database }}
+  containers.podman.podman_container:
+    name: "{{ mariadb_container_name }}"
+    image: "docker.io/mariadb:{{ mariadb_container_image_tag }}"
+    # hostname: "{{ mariadb_container_name }}"
+    pod: "{{ pod_name | default(omit) }}"
     state: started
     restart_policy: always
     recreate: true
-    networks:
-      - name: "{{ DOCKER_NETWORK_NAME }}"
-        aliases:
-          # - mariadb-container
-          - "{{ MYSQL_CONTAINER_NAME }}"
-    networks_cli_compatible: true
-    pull: true
     stop_timeout: 90
-    published_ports: '{{ mariadb_container_exposed_port }}:3306'
-    volumes:
-      - "{{ container_storage_dir_base }}/{{ MYSQL_CONTAINER_NAME }}/var_lib_mysql:/var/lib/mysql:Z"
-      - "{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}/conf.d:/etc/mysql/conf.d:Z"
+    # published: '{{ mariadb_container_exposed_port }}:3306'
+    volume:
+      - "{{ container_storage_dir_base }}/{{ mariadb_container_name }}/var_lib_mysql:/var/lib/mysql:Z"
+      - "{{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}/conf.d:/etc/mysql/conf.d:Z"
     env:
-      MYSQL_USER: "{{ MYSQL_USER }}"
-      MYSQL_PASSWORD: "{{ MYSQL_PASSWORD }}"
-      MYSQL_DATABASE: "{{ MYSQL_DATABASE }}"
-      MYSQL_ROOT_PASSWORD: "{{ MYSQL_ROOT_PASSWORD }}"
+      MYSQL_USER: "{{ mariadb_user }}"
+      MYSQL_PASSWORD: "{{ mariadb_password }}"
+      MYSQL_DATABASE: "{{ mariadb_database }}"
+      MYSQL_ROOT_PASSWORD: "{{ mariadb_root_password }}"
+    generate_systemd:
+      path: /etc/systemd/system/
+      restart_policy: always
+  register: _container_start_results
+# - debug: var=_container_start_results
 
-- name: "create {{ MYSQL_CONTAINER_NAME }} backup directory"
+- name: "enable systemd service"
+  ansible.builtin.service:
+    name: "{{ (_container_start_results.podman_systemd | dict2items | list | first).key }}"
+    enabled: true
+
+
+- name: "create {{ mariadb_container_name }} backup directory"
   ansible.builtin.file:
-    path: "{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups"
+    path: "{{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}_backups"
     state: directory
     mode: '0700'
   tags:
@@ -56,21 +84,21 @@
   tags:
     - mariadb_backup
 
-- name: Add cronjob for daily dump of mariadb {{ MYSQL_DATABASE }}
+- name: Add cronjob for daily dump of mariadb {{ mariadb_database }}
   ansible.builtin.cron:
-    name: "Daily dump of mariadb {{ MYSQL_DATABASE }}"
+    name: "Daily dump of mariadb {{ mariadb_database }}"
     minute: "11"
     hour: "*/4"
-    job: "docker exec {{ MYSQL_CONTAINER_NAME }} sh -c 'exec mysqldump --lock-tables --all-databases --user=root --password={{ MYSQL_ROOT_PASSWORD }}' >
-      {{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups/{{ MYSQL_CONTAINER_NAME }}.sql;
-      bzip2 -f {{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups/{{ MYSQL_CONTAINER_NAME }}.sql"
+    job: "podman exec {{ mariadb_container_name }} sh -c 'exec mysqldump --lock-tables --all-databases --user=root --password={{ mariadb_root_password }}' >
+      {{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}_backups/{{ mariadb_container_name }}.sql;
+      bzip2 -f {{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}_backups/{{ mariadb_container_name }}.sql"
   tags:
     - mariadb_backup
 
 - name: configure logrotate for the database dump
   ansible.builtin.template:
     src: logrotate.cfg.j2
-    dest: "/etc/logrotate.d/{{ MYSQL_CONTAINER_NAME }}.cfg"
+    dest: "/etc/logrotate.d/{{ mariadb_container_name }}.cfg"
     mode: '0644'
   tags:
     - mariadb_backup
@@ -93,7 +121,7 @@
     state: "{{ item.state }}"
   register: filecontext
   with_items:
-    - {target: '{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups(/.*)?', setype: 'var_log_t', state: 'present'}
+    - {target: '{{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}_backups(/.*)?', setype: 'var_log_t', state: 'present'}
   when:
     - ansible_selinux and ansible_selinux.status == "enabled"
   tags:
@@ -106,7 +134,7 @@
   ansible.builtin.command: |
     restorecon -F -R -v {{ item.target }}
   with_items:
-    - {index: 0, target: '{{ container_storage_dir_base_backup }}/{{ MYSQL_CONTAINER_NAME }}_backups'}
+    - {index: 0, target: '{{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}_backups'}
   when:
     - filecontext.results[item.index] is changed
     - ansible_selinux and ansible_selinux.status == "enabled"
