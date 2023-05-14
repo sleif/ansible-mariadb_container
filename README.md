@@ -4,7 +4,7 @@ This role runs a MariaDB instance on Podman.
 
 ## Requirements
 
-Use it on a machine setup with ansible role sleif.podman.
+- Podman installed
 
 ## Role Variables
 
@@ -12,6 +12,7 @@ Use it on a machine setup with ansible role sleif.podman.
 - container_storage_dir_base_backup: '/srv'
 - mariadb_container_max_connections: '512'
 - mariadb_container_exposed_port: '3306'
+- mariadb_container_image_tag: '10.6'
 
 ## Dependencies
 
@@ -21,8 +22,6 @@ N/A
 
     - hosts: "server"
       user: root
-      <!-- vars:
-        DOCKER_NETWORK_NAME: 'custom_docker_network' -->
       roles:
         - { role: sleif.mariadb_container, tags: "mariadb_container" }
 

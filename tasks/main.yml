@@ -1,15 +1,6 @@
 ---
 
-- name: "create {{ mariadb_container_name }} backup directory"
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    mode: '0755'
-  loop:
-    - "{{ container_storage_dir_base }}/{{ mariadb_container_name }}/var_lib_mysql"
-    - "{{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}/conf.d"
-
-- name: create custom configuration
+- name: Create custom configuration
   community.general.ini_file:
     path: "{{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}/conf.d/custom.cnf"
     section: mysqld
@@ -20,30 +11,11 @@
     - {option: 'max_connections', value: '{{ mariadb_container_max_connections }}'}
     - {option: 'innodb_read_only_compressed', value: 'off'}
 
-- name: Gather info about the pod
-  containers.podman.podman_pod_info:
-    name: "{{ pod_name }}"
-  register: _pod_info
-  when:
-    - pod_name is defined
-    - pod_name | length > 0
-
-- name: create the pod
-  containers.podman.podman_pod:
-    name: "{{ pod_name }}"
-    publish: "{{ pod_published_ports | default(omit) }}"
-  register: _pod_info
-  when:
-    - pod_name is defined
-    - pod_name | length > 0
-    - _pod_info.pods | length == 0
-
 - name: Start MariaDB container for {{ mariadb_database }}
   containers.podman.podman_container:
     name: "{{ mariadb_container_name }}"
-    image: "docker.io/mariadb:{{ mariadb_container_image_tag }}"
-    # hostname: "{{ mariadb_container_name }}"
-    pod: "{{ pod_name | default(omit) }}"
+    image: "docker.io/mariadb:{{ mariadb_container_image_tag | d('latest') }}"
+    network: "{{ podman_network_name }}"
     state: started
     restart_policy: always
     recreate: true
@@ -63,13 +35,12 @@
   register: _container_start_results
 # - debug: var=_container_start_results
 
-- name: "enable systemd service"
+- name: Enable systemd service
   ansible.builtin.service:
     name: "{{ (_container_start_results.podman_systemd | dict2items | list | first).key }}"
     enabled: true
 
-
-- name: "create {{ mariadb_container_name }} backup directory"
+- name: Create backup directory {{ mariadb_container_name }}
   ansible.builtin.file:
     path: "{{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}_backups"
     state: directory
@@ -77,7 +48,7 @@
   tags:
     - mariadb_backup
 
-- name: "ensure bzip2 is installed"
+- name: Ensure bzip2 is installed
   ansible.builtin.package:
     name: bzip2
     state: present
@@ -95,7 +66,7 @@
   tags:
     - mariadb_backup
 
-- name: configure logrotate for the database dump
+- name: Configure logrotate for the database dump
   ansible.builtin.template:
     src: logrotate.cfg.j2
     dest: "/etc/logrotate.d/{{ mariadb_container_name }}.cfg"
@@ -103,7 +74,7 @@
   tags:
     - mariadb_backup
 
-- name: selinux enable logrotate on NFS
+- name: Selinux enable logrotate on NFS
   ansible.posix.seboolean:
     name: logrotate_use_nfs
     state: true
@@ -127,9 +98,6 @@
   tags:
     - mariadb_selinux
 
-# - ansible.builtin.debug:
-#     msg: "{{ filecontext.results[0] }}"
-
 - name: Run restore context to reload selinux
   ansible.builtin.command: |
     restorecon -F -R -v {{ item.target }}
@@ -138,5 +106,7 @@
   when:
     - filecontext.results[item.index] is changed
     - ansible_selinux and ansible_selinux.status == "enabled"
+  register: _result
+  changed_when: _result.rc != 0
   tags:
     - mariadb_selinux
