@@ -18,7 +18,7 @@ This role runs a MariaDB instance on Podman.
 
 ```sh
 ansible-galaxy install sleif.podman --force
-ansible-galaxy install sleif.caddy_container --force
+ansible-galaxy install sleif.mariadb_container --force
 ```
 
 ## Example Playbook
