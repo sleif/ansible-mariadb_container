@@ -1,9 +1,7 @@
 ---
 
-exclude_paths:
-  - ./meta/
-
 skip_list:
-  - 'role-name'
-  - 'var-naming'
+  - name[casing]
+  - name[template]
+  - role-name
   - var-naming[no-role-prefix]
