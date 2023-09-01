@@ -8,8 +8,8 @@ This role runs a MariaDB instance on Podman.
 
 ## Role Variables
 
-- container_storage_dir_base: '/srv' (don't place it on NFS volume)
-- container_storage_dir_base_backup: '/srv'
+- container_storage_dir_base_local: '/srv' (don't place it on NFS volume)
+- container_storage_dir_base: '/srv'
 - mariadb_container_max_connections: '512'
 - mariadb_container_exposed_port: '3306'
 - mariadb_container_image_tag: '10.6'

@@ -1,4 +1,9 @@
-# .ansible-lint
+---
+
+exclude_paths:
+  - ./meta/
+
 skip_list:
-  - '403'  # Package installs should not use latest
-  - '503'  # Tasks that run when changed should likely be handlers
+  - 'role-name'
+  - 'var-naming'
+  - var-naming[no-role-prefix]

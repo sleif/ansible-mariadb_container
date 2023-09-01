@@ -1,49 +1,93 @@
 ---
 
+- name: Include podman_init_vars.yml from sleif.podman
+  ansible.builtin.include_tasks: "{{ lookup('first_found', params) }}"
+  vars:
+    params:
+      files: sleif.podman/tasks/includes/podman_init_vars.yml
+      paths: "{{ lookup('config', 'DEFAULT_ROLES_PATH') }}"
+
 - name: Create custom configuration
+  become: "{{ podman_rootless | bool }}"
+  become_user: "{{ podman_user if podman_rootless | bool else omit }}"
   community.general.ini_file:
-    path: "{{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}/conf.d/custom.cnf"
+    path: "{{ _container_storage_dir_base }}/{{ container_name }}/conf.d/custom.cnf"
     section: mysqld
     option: "{{ item.option }}"
     value: "{{ item.value }}"
+    # owner: "{{ _owner }}"
+    # group: "{{ _group }}"
     mode: '0644'
   loop:
     - {option: 'max_connections', value: '{{ mariadb_container_max_connections }}'}
     - {option: 'innodb_read_only_compressed', value: 'off'}
 
-- name: Start MariaDB container for {{ mariadb_database }}
+- name: Create persistant container directories
+  become: "{{ podman_rootless | bool }}"
+  become_user: "{{ podman_user if podman_rootless | bool else omit }}"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    # owner: "{{ _owner }}"
+    # group: "{{ _group }}"
+    mode: '0755'
+  loop:
+    - "{{ _container_storage_dir_base }}/{{ container_name }}/conf.d"
+    - "{{ _container_storage_dir_base_local }}/{{ container_name }}/var_lib_mysql"
+
+- name: Include role sleif.podman podman_operation pod_create
+  ansible.builtin.include_role:
+    name: sleif.podman
+    apply:
+      tags:
+        - podman_pod_create
+  vars:
+    podman_operation: pod_create
+  tags: always
+
+- name: Create MariaDB container for {{ mariadb_database }}
+  become: "{{ podman_rootless | bool }}"
+  become_user: "{{ podman_user if podman_rootless | bool else omit }}"
   containers.podman.podman_container:
-    name: "{{ mariadb_container_name }}"
+    name: "{{ container_name }}"
     image: "docker.io/mariadb:{{ mariadb_container_image_tag | d('latest') }}"
+    pod: "{{ pod_name | default(omit) }}"
     network: "{{ podman_network_name }}"
-    state: started
+    state: created
     restart_policy: always
-    recreate: true
+    recreate: "{{ podman_container_recreate | d(false) }}"
     stop_timeout: 90
-    # published: '{{ mariadb_container_exposed_port }}:3306'
+    published: "{{ mariadb_container_exposed_port + ':3306' if pod_name | bool else omit }}"
     volume:
-      - "{{ container_storage_dir_base }}/{{ mariadb_container_name }}/var_lib_mysql:/var/lib/mysql:Z"
-      - "{{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}/conf.d:/etc/mysql/conf.d:Z"
+      - "{{ _container_storage_dir_base }}/{{ container_name }}/conf.d:/etc/mysql/conf.d:Z"
+      - "{{ _container_storage_dir_base_local }}/{{ container_name }}/var_lib_mysql:/var/lib/mysql:Z"
     env:
       MYSQL_USER: "{{ mariadb_user }}"
       MYSQL_PASSWORD: "{{ mariadb_password }}"
       MYSQL_DATABASE: "{{ mariadb_database }}"
       MYSQL_ROOT_PASSWORD: "{{ mariadb_root_password }}"
-    generate_systemd:
-      path: /etc/systemd/system/
-      restart_policy: always
-  register: _container_start_results
-# - debug: var=_container_start_results
+      TZ: "Europe/Berlin"
+    timezone: "Europe/Berlin"
+  register: _container_create_results
+# - debug: var=_container_create_results
 
-- name: Enable systemd service
-  ansible.builtin.service:
-    name: "{{ (_container_start_results.podman_systemd | dict2items | list | first).key }}"
-    enabled: true
+- name: Include role sleif.podman podman_operation podman_generate_systemd
+  ansible.builtin.include_role:
+    name: sleif.podman
+    apply:
+      tags:
+        - podman_generate_systemd
+  vars:
+    podman_operation: podman_generate_systemd
+    target: "{{ pod_name if pod_name is defined and pod_name | length > 0 else container_name }}"
+  tags: always
 
-- name: Create backup directory {{ mariadb_container_name }}
+- name: Create backup directory {{ container_name }}
   ansible.builtin.file:
-    path: "{{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}_backups"
+    path: "{{ _container_storage_dir_base }}/{{ container_name }}_backups"
     state: directory
+    owner: "{{ _owner }}"
+    group: "{{ _group }}"
     mode: '0700'
   tags:
     - mariadb_backup
@@ -56,20 +100,22 @@
     - mariadb_backup
 
 - name: Add cronjob for daily dump of mariadb {{ mariadb_database }}
+  become: "{{ podman_rootless | bool }}"
+  become_user: "{{ podman_user if podman_rootless | bool else omit }}"
   ansible.builtin.cron:
     name: "Daily dump of mariadb {{ mariadb_database }}"
     minute: "11"
     hour: "*/4"
-    job: "podman exec {{ mariadb_container_name }} sh -c 'exec mysqldump --lock-tables --all-databases --user=root --password={{ mariadb_root_password }}' >
-      {{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}_backups/{{ mariadb_container_name }}.sql;
-      bzip2 -f {{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}_backups/{{ mariadb_container_name }}.sql"
+    job: "podman exec {{ container_name }} sh -c 'exec mariadb-dump --lock-tables --all-databases --user=root --password={{ mariadb_root_password }}' >
+      {{ _container_storage_dir_base }}/{{ container_name }}_backups/{{ container_name }}.sql;
+      bzip2 -f {{ _container_storage_dir_base }}/{{ container_name }}_backups/{{ container_name }}.sql"
   tags:
     - mariadb_backup
 
 - name: Configure logrotate for the database dump
   ansible.builtin.template:
     src: logrotate.cfg.j2
-    dest: "/etc/logrotate.d/{{ mariadb_container_name }}.cfg"
+    dest: "/etc/logrotate.d/{{ container_name }}.cfg"
     mode: '0644'
   tags:
     - mariadb_backup
@@ -92,7 +138,7 @@
     state: "{{ item.state }}"
   register: filecontext
   with_items:
-    - {target: '{{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}_backups(/.*)?', setype: 'var_log_t', state: 'present'}
+    - {target: '{{ _container_storage_dir_base }}/{{ container_name }}_backups(/.*)?', setype: 'var_log_t', state: 'present'}
   when:
     - ansible_selinux and ansible_selinux.status == "enabled"
   tags:
@@ -102,7 +148,7 @@
   ansible.builtin.command: |
     restorecon -F -R -v {{ item.target }}
   with_items:
-    - {index: 0, target: '{{ container_storage_dir_base_backup }}/{{ mariadb_container_name }}_backups'}
+    - {index: 0, target: '{{ _container_storage_dir_base }}/{{ container_name }}_backups'}
   when:
     - filecontext.results[item.index] is changed
     - ansible_selinux and ansible_selinux.status == "enabled"
