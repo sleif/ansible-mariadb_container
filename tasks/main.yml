@@ -45,6 +45,20 @@
     podman_operation: pod_create
   tags: always
 
+- name: Create Podman secrets
+  become: "{{ podman_rootless | bool }}"
+  become_user: "{{ podman_user if podman_rootless | bool else omit }}"
+  containers.podman.podman_secret:
+    state: present
+    name: "{{ item.name }}"
+    data: "{{ item.data }}"
+    skip_existing: true
+  loop:
+    - {name: 'mariadb_password', data: '{{ mariadb_password }}'}
+    - {name: 'mariadb_root_password', data: '{{ mariadb_root_password }}'}
+  tags: podman_secrets
+
+
 - name: Create MariaDB container for {{ mariadb_database }}
   become: "{{ podman_rootless | bool }}"
   become_user: "{{ podman_user if podman_rootless | bool else omit }}"
@@ -52,20 +66,23 @@
     name: "{{ container_name }}"
     image: "docker.io/mariadb:{{ mariadb_container_image_tag | d('latest') }}"
     pod: "{{ pod_name | default(omit) }}"
-    network: "{{ podman_network_name }}"
+    # network: "{{ podman_network_name }}"
     state: created
     restart_policy: always
     recreate: "{{ podman_container_recreate | d(false) }}"
     stop_timeout: 90
-    published: "{{ mariadb_container_exposed_port + ':3306' if pod_name | bool else omit }}"
+    # published: "{{ mariadb_container_exposed_port + ':3306' if pod_name | bool else omit }}"
     volume:
       - "{{ _container_storage_dir_base }}/{{ container_name }}/conf.d:/etc/mysql/conf.d:Z"
       - "{{ _container_storage_dir_base_local }}/{{ container_name }}/var_lib_mysql:/var/lib/mysql:Z"
+    secrets:
+      - mariadb_password
+      - mariadb_root_password
     env:
       MYSQL_USER: "{{ mariadb_user }}"
-      MYSQL_PASSWORD: "{{ mariadb_password }}"
+      MYSQL_PASSWORD_FILE: "/run/secrets/mariadb_password"
       MYSQL_DATABASE: "{{ mariadb_database }}"
-      MYSQL_ROOT_PASSWORD: "{{ mariadb_root_password }}"
+      MYSQL_ROOT_PASSWORD_FILE: "/run/secrets/mariadb_root_password"
       TZ: "Europe/Berlin"
     timezone: "Europe/Berlin"
   register: _container_create_results
