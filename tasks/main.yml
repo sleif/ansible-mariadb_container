@@ -35,14 +35,14 @@
     - "{{ _container_storage_dir_base }}/{{ container_name }}/conf.d"
     - "{{ _container_storage_dir_base_local }}/{{ container_name }}/var_lib_mysql"
 
-- name: Include role sleif.podman podman_operation pod_create
+- name: Include role sleif.podman podman_operation podman_pod_create
   ansible.builtin.include_role:
     name: sleif.podman
     apply:
       tags:
         - podman_pod_create
   vars:
-    podman_operation: pod_create
+    podman_operation: podman_pod_create
   tags: always
 
 - name: Create Podman secrets
@@ -66,7 +66,7 @@
     name: "{{ container_name }}"
     image: "docker.io/mariadb:{{ mariadb_container_image_tag | d('latest') }}"
     pod: "{{ pod_name | default(omit) }}"
-    # network: "{{ podman_network_name }}"
+    network: "{{ podman_network_name if pod_name | d('') | length == 0 else [] }}"
     state: created
     restart_policy: always
     recreate: "{{ podman_container_recreate | d(false) }}"
@@ -106,6 +106,7 @@
     owner: "{{ _owner }}"
     group: "{{ _group }}"
     mode: '0700'
+  register: _backup_dir_create
   tags:
     - mariadb_backup
 
@@ -167,7 +168,7 @@
   with_items:
     - {index: 0, target: '{{ _container_storage_dir_base }}/{{ container_name }}_backups'}
   when:
-    - filecontext.results[item.index] is changed
+    - filecontext.results[item.index] is changed or _backup_dir_create.changed | bool
     - ansible_selinux and ansible_selinux.status == "enabled"
   register: _result
   changed_when: _result.rc != 0
