@@ -58,20 +58,20 @@
     - {name: 'mariadb_root_password', data: '{{ mariadb_root_password }}'}
   tags: podman_secrets
 
-- name: Pull container image docker.io/mariadb
+- name: Pull container image {{ mariadb_container_image }}
   become: "{{ podman_rootless | bool }}"
   become_user: "{{ podman_user if podman_rootless | bool else omit }}"
   containers.podman.podman_image:
-    name: "docker.io/mariadb"
-    tag: "{{ mariadb_container_image_tag | d('latest') }}"
-    force: true
+    name: "{{ mariadb_container_image }}"
+    tag: "{{ mariadb_container_image_tag }}"
+    # force: true
 
 - name: Create MariaDB container for {{ mariadb_database }}
   become: "{{ podman_rootless | bool }}"
   become_user: "{{ podman_user if podman_rootless | bool else omit }}"
   containers.podman.podman_container:
     name: "{{ container_name }}"
-    image: "docker.io/mariadb:{{ mariadb_container_image_tag | d('latest') }}"
+    image: "{{ mariadb_container_image }}:{{ mariadb_container_image_tag }}"
     pod: "{{ pod_name | default(omit) }}"
     network: "{{ podman_network_name if pod_name | d('') is falsy else [] }}"
     state: created

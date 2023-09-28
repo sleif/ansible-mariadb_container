@@ -4,7 +4,6 @@ podman_network_name: podman
 
 container_storage_dir_base: '/srv'
 container_storage_dir_base_local: '/srv'
-mariadb_container_image_tag: 'latest'
 mariadb_container_max_connections: '512'
 mariadb_container_exposed_port: '3306'
 
@@ -13,3 +12,6 @@ mariadb_root_password: "mariadb_root_password"
 mariadb_user: "mariadb_db_user"
 mariadb_password: "mariadb_db_user_password"
 mariadb_database: "mariadb_custom_database"
+
+mariadb_container_image: "docker.io/mariadb"
+mariadb_container_image_tag: "latest"
