@@ -103,7 +103,7 @@
         - podman_generate_systemd
   vars:
     podman_operation: podman_generate_systemd
-    target: "{{ pod_name if pod_name is defined and pod_name | length > 0 else container_name }}"
+    target: "{{ pod_name if pod_name | d('') is truthy else container_name }}"
   tags: always
 
 - name: Create backup directory {{ container_name }}
