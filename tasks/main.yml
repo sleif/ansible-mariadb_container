@@ -20,7 +20,7 @@
     mode: '0644'
   loop:
     - {option: 'max_connections', value: '{{ mariadb_container_max_connections }}'}
-    - {option: 'innodb_read_only_compressed', value: 'off'}
+    # - {option: 'innodb_read_only_compressed', value: 'off'}
 
 - name: Create persistant container directories
   become: "{{ podman_rootless | bool }}"
