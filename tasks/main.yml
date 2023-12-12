@@ -56,6 +56,7 @@
   loop:
     - {name: 'mariadb_password', data: '{{ mariadb_password }}'}
     - {name: 'mariadb_root_password', data: '{{ mariadb_root_password }}'}
+  no_log: true
   tags: podman_secrets
 
 - name: Pull container image {{ mariadb_container_image }}
