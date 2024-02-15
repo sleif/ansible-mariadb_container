@@ -14,6 +14,10 @@ This role runs a MariaDB instance on Podman.
 - mariadb_container_exposed_port: '3306'
 - mariadb_container_image_tag: '10.6'
 
+### SE Linux related
+
+- If necessary make use of `container_volumes_parameter` which can contain values like `:Z`. It defaults to `''`.
+
 ## Dependencies
 
 ```sh

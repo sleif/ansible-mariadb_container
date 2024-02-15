@@ -81,8 +81,8 @@
     stop_timeout: 90
     # published: "{{ mariadb_container_exposed_port + ':3306' if pod_name | bool else omit }}"
     volume:
-      - "{{ _container_storage_dir_base }}/{{ container_name }}/conf.d:/etc/mysql/conf.d:Z"
-      - "{{ _container_storage_dir_base_local }}/{{ container_name }}/var_lib_mysql:/var/lib/mysql:Z"
+      - "{{ _container_storage_dir_base }}/{{ container_name }}/conf.d:/etc/mysql/conf.d{{ container_volumes_parameter | d('') }}"
+      - "{{ _container_storage_dir_base_local }}/{{ container_name }}/var_lib_mysql:/var/lib/mysql{{ container_volumes_parameter | d('') }}"
     secrets:
       - mariadb_password
       - mariadb_root_password
