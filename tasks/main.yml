@@ -11,7 +11,7 @@
   become: "{{ podman_rootless | bool }}"
   become_user: "{{ podman_user if podman_rootless | bool else omit }}"
   community.general.ini_file:
-    path: "{{ _container_storage_dir_base }}/{{ container_name }}/conf.d/custom.cnf"
+    path: "{{ _container_storage_dir_base }}/{{ mariadb_container_name }}/conf.d/custom.cnf"
     section: mysqld
     option: "{{ item.option }}"
     value: "{{ item.value }}"
@@ -32,84 +32,50 @@
     # group: "{{ _group }}"
     mode: '0755'
   loop:
-    - "{{ _container_storage_dir_base }}/{{ container_name }}/conf.d"
-    - "{{ _container_storage_dir_base_local }}/{{ container_name }}/var_lib_mysql"
+    - "{{ _container_storage_dir_base }}/{{ mariadb_container_name }}/conf.d"
+    - "{{ _container_storage_dir_base_local }}/{{ mariadb_container_name }}/var_lib_mysql"
 
-- name: Include role sleif.podman podman_operation podman_pod_create
+- name: include_role sleif.podman podman_operation podman_create_container for mariadb
   ansible.builtin.include_role:
     name: sleif.podman
     apply:
       tags:
-        - podman_pod_create
+        - podman_container_create
   vars:
-    podman_operation: podman_pod_create
-  tags: always
+    # podman_rootless: true
+    # podman_network_name: "{{ podman_networks.podman_network_rootless.podman_network_name if podman_rootless | bool else
+    #   podman_networks.podman_network_root.podman_network_name }}"
+    podman_operation: podman_container_create
+    container_name: '{{ mariadb_container_name }}'
+    target: "{{ pod_name if pod_name | d('') is truthy else pihole_container_name }}"
+    _container:
+      name: '{{ container_name }}'
+      image:
+        name: "{{ mariadb_container_image }}"
+        tag: "{{ mariadb_container_image_tag }}"
+      network: "{{ podman_network_name if pod_name | d('') is falsy else [] }}"
+      pod: "{{ pod_name | default(omit) }}"
+      stop_timeout: 90
+      volumes:
+        - {'host': '{{ _container_storage_dir_base }}/{{ container_name }}/conf.d', 'target': '/etc/mysql/conf.d{{
+          container_volumes_parameter | d("") }}', 'mode': '0755'}
+        - {'host': '{{ _container_storage_dir_base_local }}/{{ container_name }}/var_lib_mysql', 'target': '/var/lib/mysql{{
+          container_volumes_parameter | d("") }}', 'mode': '0755'}
+      secrets:
+        - {name: 'mariadb_password', data: '{{ mariadb_password }}'}
+        - {name: 'mariadb_root_password', data: '{{ mariadb_root_password }}'}
+      env:
+        MYSQL_USER: "{{ mariadb_user }}"
+        MYSQL_PASSWORD_FILE: "/run/secrets/mariadb_password"
+        MYSQL_DATABASE: "{{ mariadb_database }}"
+        MYSQL_ROOT_PASSWORD_FILE: "/run/secrets/mariadb_root_password"
+        TZ: "Europe/Berlin"
+      timezone: "Europe/Berlin"
+  tags: podman_container_create
 
-- name: Create Podman secrets
-  become: "{{ podman_rootless | bool }}"
-  become_user: "{{ podman_user if podman_rootless | bool else omit }}"
-  containers.podman.podman_secret:
-    state: present
-    name: "{{ item.name }}"
-    data: "{{ item.data }}"
-    skip_existing: true
-  loop:
-    - {name: 'mariadb_password', data: '{{ mariadb_password }}'}
-    - {name: 'mariadb_root_password', data: '{{ mariadb_root_password }}'}
-  no_log: true
-  tags: podman_secrets
-
-- name: Pull container image {{ mariadb_container_image }}
-  become: "{{ podman_rootless | bool }}"
-  become_user: "{{ podman_user if podman_rootless | bool else omit }}"
-  containers.podman.podman_image:
-    name: "{{ mariadb_container_image }}"
-    tag: "{{ mariadb_container_image_tag }}"
-    # force: true
-
-- name: Create MariaDB container for {{ mariadb_database }}
-  become: "{{ podman_rootless | bool }}"
-  become_user: "{{ podman_user if podman_rootless | bool else omit }}"
-  containers.podman.podman_container:
-    name: "{{ container_name }}"
-    image: "{{ mariadb_container_image }}:{{ mariadb_container_image_tag }}"
-    pod: "{{ pod_name | default(omit) }}"
-    network: "{{ podman_network_name if pod_name | d('') is falsy else [] }}"
-    state: created
-    restart_policy: always
-    recreate: "{{ podman_container_recreate | d(false) }}"
-    stop_timeout: 90
-    # published: "{{ mariadb_container_exposed_port + ':3306' if pod_name | bool else omit }}"
-    volume:
-      - "{{ _container_storage_dir_base }}/{{ container_name }}/conf.d:/etc/mysql/conf.d{{ container_volumes_parameter | d('') }}"
-      - "{{ _container_storage_dir_base_local }}/{{ container_name }}/var_lib_mysql:/var/lib/mysql{{ container_volumes_parameter | d('') }}"
-    secrets:
-      - mariadb_password
-      - mariadb_root_password
-    env:
-      MYSQL_USER: "{{ mariadb_user }}"
-      MYSQL_PASSWORD_FILE: "/run/secrets/mariadb_password"
-      MYSQL_DATABASE: "{{ mariadb_database }}"
-      MYSQL_ROOT_PASSWORD_FILE: "/run/secrets/mariadb_root_password"
-      TZ: "Europe/Berlin"
-    timezone: "Europe/Berlin"
-  register: _container_create_results
-# - debug: var=_container_create_results
-
-- name: Include role sleif.podman podman_operation podman_generate_systemd
-  ansible.builtin.include_role:
-    name: sleif.podman
-    apply:
-      tags:
-        - podman_generate_systemd
-  vars:
-    podman_operation: podman_generate_systemd
-    target: "{{ pod_name if pod_name | d('') is truthy else container_name }}"
-  tags: always
-
-- name: Create backup directory {{ container_name }}
+- name: Create backup directory {{ mariadb_container_name }}
   ansible.builtin.file:
-    path: "{{ _container_storage_dir_base }}/{{ container_name }}_backups"
+    path: "{{ _container_storage_dir_base }}/{{ mariadb_container_name }}_backups"
     state: directory
     owner: "{{ _owner }}"
     group: "{{ _group }}"
@@ -132,16 +98,16 @@
     name: "Daily dump of mariadb {{ mariadb_database }}"
     minute: "11"
     hour: "*/4"
-    job: "podman exec {{ container_name }} sh -c 'exec mariadb-dump --lock-tables --all-databases --user=root --password={{ mariadb_root_password }}' >
-      {{ _container_storage_dir_base }}/{{ container_name }}_backups/{{ container_name }}.sql;
-      bzip2 -f {{ _container_storage_dir_base }}/{{ container_name }}_backups/{{ container_name }}.sql"
+    job: "podman exec {{ mariadb_container_name }} sh -c 'exec mariadb-dump --lock-tables --all-databases --user=root --password={{ mariadb_root_password }}' >
+      {{ _container_storage_dir_base }}/{{ mariadb_container_name }}_backups/{{ mariadb_container_name }}.sql;
+      bzip2 -f {{ _container_storage_dir_base }}/{{ mariadb_container_name }}_backups/{{ mariadb_container_name }}.sql"
   tags:
     - mariadb_backup
 
 - name: Configure logrotate for the database dump
   ansible.builtin.template:
     src: logrotate.cfg.j2
-    dest: "/etc/logrotate.d/{{ container_name }}.cfg"
+    dest: "/etc/logrotate.d/{{ mariadb_container_name }}.cfg"
     mode: '0644'
   tags:
     - mariadb_backup
@@ -164,7 +130,7 @@
     state: "{{ item.state }}"
   register: filecontext
   with_items:
-    - {target: '{{ _container_storage_dir_base }}/{{ container_name }}_backups(/.*)?', setype: 'var_log_t', state: 'present'}
+    - {target: '{{ _container_storage_dir_base }}/{{ mariadb_container_name }}_backups(/.*)?', setype: 'var_log_t', state: 'present'}
   when:
     - ansible_selinux and ansible_selinux.status == "enabled"
   tags:
@@ -174,7 +140,7 @@
   ansible.builtin.command: |
     restorecon -F -R -v {{ item.target }}
   with_items:
-    - {index: 0, target: '{{ _container_storage_dir_base }}/{{ container_name }}_backups'}
+    - {index: 0, target: '{{ _container_storage_dir_base }}/{{ mariadb_container_name }}_backups'}
   when:
     - filecontext.results[item.index] is changed or _backup_dir_create.changed | bool
     - ansible_selinux and ansible_selinux.status == "enabled"
