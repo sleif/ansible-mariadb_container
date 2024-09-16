@@ -62,13 +62,13 @@
         - {'host': '{{ _container_storage_dir_base_local }}/{{ container_name }}/var_lib_mysql', 'target': '/var/lib/mysql{{
           container_volumes_parameter | d("") }}', 'mode': '0755'}
       secrets:
-        - {name: 'mariadb_password', data: '{{ mariadb_password }}'}
-        - {name: 'mariadb_root_password', data: '{{ mariadb_root_password }}'}
+        - {name: '{{ container_name }}_mariadb_password', data: '{{ mariadb_password }}'}
+        - {name: '{{ container_name }}_mariadb_root_password', data: '{{ mariadb_root_password }}'}
       env:
         MYSQL_USER: "{{ mariadb_user }}"
-        MYSQL_PASSWORD_FILE: "/run/secrets/mariadb_password"
+        MYSQL_PASSWORD_FILE: "/run/secrets/{{ container_name }}_mariadb_password"
         MYSQL_DATABASE: "{{ mariadb_database }}"
-        MYSQL_ROOT_PASSWORD_FILE: "/run/secrets/mariadb_root_password"
+        MYSQL_ROOT_PASSWORD_FILE: "/run/secrets/{{ container_name }}_mariadb_root_password"
         TZ: "Europe/Berlin"
       timezone: "Europe/Berlin"
   tags: podman_container_create
